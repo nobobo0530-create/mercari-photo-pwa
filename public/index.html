@@ -15,13 +15,13 @@
 <body>
 <header class="top">
   <h1>メルカリ写真</h1>
-  <p class="sub">正方形・明るく・背景は白く。汚れはそのまま。</p>
+  <p class="sub">たくさんの写真を、まとめ写真も使って10枚に。</p>
 </header>
 
 <main>
   <section id="empty" class="empty">
     <div class="sample" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-    <p>写真アプリから、出品する写真を<br>まとめて選んでください（最大20枚）</p>
+    <p>写真アプリから、出品する写真を<br>まとめて選んでください（11枚以上なら10枚に収めます）</p>
     <button type="button" class="pick primary">写真を選ぶ</button>
     <p class="note">写真はこのiPhoneの中だけで加工します。どこにも送りません。</p>
   </section>
@@ -41,11 +41,21 @@
         <span>ピンク <b id="pink-val">50</b></span>
         <input id="pink" type="range" min="0" max="100" step="5" value="50">
       </label>
+      <div class="stepper" id="singles-wrap">
+        <span>1枚で見せる写真</span>
+        <div class="step">
+          <button type="button" id="singles-minus" class="ghost" aria-label="減らす">−</button>
+          <b id="singles-val">5</b>
+          <button type="button" id="singles-plus" class="ghost" aria-label="増やす">＋</button>
+        </div>
+      </div>
+      <p class="hint">選んだ順に、最初の写真から1枚ずつ使います。残りはまとめ写真になります。</p>
       <div class="row">
         <button type="button" class="pick ghost">写真を選び直す</button>
       </div>
     </div>
 
+    <p id="summary" class="summary"></p>
     <p id="status" class="status" aria-live="polite"></p>
     <div id="grid" class="grid"></div>
   </section>
