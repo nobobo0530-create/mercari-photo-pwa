@@ -125,6 +125,8 @@ function panelRects(n) {
       rects.push({ x: GAP + ci * (cw + GAP), y: GAP + ri * (rh + GAP), w: cw, h: rh });
     }
   });
+  // 読む順番（左上 → 右上 → 左下 → 右下）に並べる
+  rects.sort((a, b) => (Math.abs(a.y - b.y) > 1 ? a.y - b.y : a.x - b.x));
   return rects;
 }
 
