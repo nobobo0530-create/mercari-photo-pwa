@@ -17,6 +17,7 @@ const state = {
   singles: null,              // 1枚で見せる写真の数（null = おまかせ）
   bright: 50,
   pink: 50,                   // 色味の強さ 0-100
+  sat: null,                  // 鮮やかさ 0-100（50 = そのまま、null = おまかせ：黒い商品は控えめ）
   tint: 'pinkbeige',          // 色味（下の TINTS の id か 'custom'）
   custom: '#e8b4c8',          // 自分で選んだ色
   mode: 'normal',             // 'normal' = ふつうの商品 / 'black' = 黒い商品
@@ -54,6 +55,7 @@ function loadSettings() {
     const s = JSON.parse(localStorage.getItem('mp-settings') || '{}');
     if (typeof s.bright === 'number') state.bright = s.bright;
     if (typeof s.pink === 'number') state.pink = s.pink;
+    if (typeof s.sat === 'number') state.sat = s.sat;
     if (s.mode === 'black') state.mode = 'black';
     if (s.tint && (s.tint === 'custom' || TINTS.some((t) => t.id === s.tint))) state.tint = s.tint;
     if (/^#[0-9a-f]{6}$/i.test(s.custom || '')) state.custom = s.custom;
@@ -61,7 +63,7 @@ function loadSettings() {
 }
 function saveSettings() {
   try {
-    localStorage.setItem('mp-settings', JSON.stringify({ bright: state.bright, pink: state.pink, mode: state.mode, tint: state.tint, custom: state.custom }));
+    localStorage.setItem('mp-settings', JSON.stringify({ bright: state.bright, pink: state.pink, sat: state.sat, mode: state.mode, tint: state.tint, custom: state.custom }));
   } catch (_) {}
 }
 
@@ -170,7 +172,11 @@ function analyze(d) {
   return { gr: gr * expo / 255, gg: gg * expo / 255, gb: gb * expo / 255 };
 }
 
-function apply(d, w, h, params, brightV, strengthV, mode, delta) {
+function currentSat() {
+  return state.sat == null ? (state.mode === 'black' ? 25 : 50) : state.sat;
+}
+
+function apply(d, w, h, params, brightV, strengthV, mode, delta, satV) {
   const { gr, gg, gb } = params;
   const gamma = 1 - 0.4 * (brightV / 100);
   const isBlack = mode === 'black';
@@ -190,6 +196,7 @@ function apply(d, w, h, params, brightV, strengthV, mode, delta) {
   const p = strengthV / 100;
   const dr = delta[0] * p, dg = delta[1] * p, db = delta[2] * p;
   const hasTint = p > 0 && (dr || dg || db);
+  const sf = satV / 50;                    // 0〜2（1 = そのまま）
   const s = isBlack ? 0.08 : 0.05;
   const curve = (v) => {
     v = v < 0 ? 0 : v > 1 ? 1 : v;
@@ -201,7 +208,8 @@ function apply(d, w, h, params, brightV, strengthV, mode, delta) {
     let r = curve(d[i] * gr), g = curve(d[i + 1] * gg), b = curve(d[i + 2] * gb);
     if (isBlack) {
       const m = (r + g + b) / 3;
-      if (m < 0.4) { const k = 0.35 * (1 - m / 0.4); r += (m - r) * k; g += (m - g) * k; b += (m - b) * k; }
+      // 黒・濃い色の赤っぽさを抑える（暗いほど強く）
+      if (m < 0.55) { const k = 0.7 * (1 - m / 0.55); r += (m - r) * k; g += (m - g) * k; b += (m - b) * k; }
     }
     if (hasTint) {
       // 色のある部分（商品）と、白くない部分（黒・グレーの商品）にだけ色味をのせる。白い背景はそのまま
@@ -217,6 +225,12 @@ function apply(d, w, h, params, brightV, strengthV, mode, delta) {
         g += (Math.min(1, g * (1 + dg) + dg * lift) - g) * wt;
         b += (Math.min(1, b * (1 + db) + db * lift) - b) * wt;
       }
+    }
+    if (sf !== 1) {
+      // 鮮やかさ（白い背景はもともと色がないので、ほぼ変わらない）
+      const m = (r + g + b) / 3;
+      r = m + (r - m) * sf; g = m + (g - m) * sf; b = m + (b - m) * sf;
+      r = r < 0 ? 0 : r > 1 ? 1 : r; g = g < 0 ? 0 : g > 1 ? 1 : g; b = b < 0 ? 0 : b > 1 ? 1 : b;
     }
     d[i] = r * 255 + 0.5; d[i + 1] = g * 255 + 0.5; d[i + 2] = b * 255 + 0.5;
   }
@@ -252,7 +266,7 @@ async function renderPanel(item, w, h) {
   ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
   try { bmp.close(); } catch (_) {}
   const img = ctx.getImageData(0, 0, w, h);
-  apply(img.data, w, h, item.params, state.bright, state.pink, state.mode, currentDelta());
+  apply(img.data, w, h, item.params, state.bright, state.pink, state.mode, currentDelta(), currentSat());
   ctx.putImageData(img, 0, 0);
   return c;
 }
@@ -316,7 +330,7 @@ function currentGroups() {
 }
 
 function groupKey(g) {
-  const look = `${state.mode}|${state.bright}|${state.pink}|${currentDelta().join(',')}`;
+  const look = `${state.mode}|${state.bright}|${state.pink}|${currentSat()}|${currentDelta().join(',')}`;
   return look + '|' + g.map((pos) => {
     const id = state.order[pos], c = state.items[id].crop;
     return `${id}:${c.cx.toFixed(3)},${c.cy.toFixed(3)},${c.z.toFixed(2)}`;
@@ -476,6 +490,8 @@ function render() {
   els.pink.value = state.pink;
   els.brightVal.textContent = state.bright;
   els.pinkVal.textContent = state.pink;
+  els.sat.value = currentSat();
+  els.satVal.textContent = currentSat();
   els.pinkWrap.hidden = state.tint === 'none';
   document.querySelectorAll('[name="mode"]').forEach((r) => { r.checked = r.value === state.mode; });
   document.querySelectorAll('[name="tint"]').forEach((r) => { r.checked = r.value === state.tint; });
@@ -713,7 +729,7 @@ function init() {
   Object.assign(els, {
     empty: $('#empty'), work: $('#work'), grid: $('#grid'), status: $('#status'),
     input: $('#file'), saveAll: $('#save-all'),
-    bright: $('#bright'), pink: $('#pink'), brightVal: $('#bright-val'), pinkVal: $('#pink-val'), pinkWrap: $('#pink-wrap'), tints: $('#tints'),
+    bright: $('#bright'), pink: $('#pink'), brightVal: $('#bright-val'), pinkVal: $('#pink-val'), pinkWrap: $('#pink-wrap'), sat: $('#sat'), satVal: $('#sat-val'), tints: $('#tints'),
     singlesWrap: $('#singles-wrap'), singlesVal: $('#singles-val'), singlesMinus: $('#singles-minus'), singlesPlus: $('#singles-plus'),
     summary: $('#summary'), arrange: $('#arrange'), actions: $('#actions'),
     editor: $('#editor'), frame: $('#frame'), editImg: $('#edit-img'), zoom: $('#zoom'), zoomVal: $('#zoom-val'),
@@ -728,8 +744,9 @@ function init() {
 
   els.bright.addEventListener('input', (e) => { state.bright = +e.target.value; scheduleReprocess(); });
   els.pink.addEventListener('input', (e) => { state.pink = +e.target.value; scheduleReprocess(); });
+  els.sat.addEventListener('input', (e) => { state.sat = +e.target.value; scheduleReprocess(); });
   document.querySelectorAll('[name="mode"]').forEach((r) =>
-    r.addEventListener('change', (e) => { state.mode = e.target.value; scheduleReprocess(); }));
+    r.addEventListener('change', (e) => { state.mode = e.target.value; state.sat = null; scheduleReprocess(); }));
   buildTints();
   els.singlesMinus.addEventListener('click', () => { state.singles = currentSingles() - 1; state.selected = null; scheduleReprocess(); });
   els.singlesPlus.addEventListener('click', () => { state.singles = currentSingles() + 1; state.selected = null; scheduleReprocess(); });
