@@ -9,6 +9,7 @@ const state = {
   items: [],                  // { file, name, bitmap, blob, url }
   bright: 50,                 // 0-100（50 = 前回OKをもらった明るさ）
   pink: 50,                   // 0-100（50 = 前回OKをもらったピンク）
+  mode: 'pink',               // 'pink' = ピンクベージュ / 'black' = 黒い商品 / 'natural' = 色そのまま
   fit: 'crop',                // 'crop' = 真ん中で切り抜き / 'pad' = 白い余白で正方形
   busy: false,
 };
@@ -21,12 +22,13 @@ function loadSettings() {
     const s = JSON.parse(localStorage.getItem('mp-settings') || '{}');
     if (typeof s.bright === 'number') state.bright = s.bright;
     if (typeof s.pink === 'number') state.pink = s.pink;
+    if (['pink', 'black', 'natural'].includes(s.mode)) state.mode = s.mode;
     if (s.fit === 'crop' || s.fit === 'pad') state.fit = s.fit;
   } catch (_) {}
 }
 function saveSettings() {
   try {
-    localStorage.setItem('mp-settings', JSON.stringify({ bright: state.bright, pink: state.pink, fit: state.fit }));
+    localStorage.setItem('mp-settings', JSON.stringify({ bright: state.bright, pink: state.pink, mode: state.mode, fit: state.fit }));
   } catch (_) {}
 }
 
@@ -71,7 +73,7 @@ function percentile95(d, gr = 1, gg = 1, gb = 1) {
   return 1;
 }
 
-function enhance(ctx, brightV, pinkV) {
+function enhance(ctx, brightV, pinkV, mode) {
   const img = ctx.getImageData(0, 0, SIZE, SIZE);
   const d = img.data;
 
@@ -99,24 +101,40 @@ function enhance(ctx, brightV, pinkV) {
   const gamma = 1 - 0.4 * (brightV / 100);
   const LUT_N = 4096;
   const lut = new Float32Array(LUT_N + 1);
-  for (let k = 0; k <= LUT_N; k++) lut[k] = Math.pow(k / LUT_N, gamma);
+  const isBlack = mode === 'black';
+  for (let k = 0; k <= LUT_N; k++) {
+    const x = k / LUT_N;
+    if (isBlack) {
+      // 黒い商品：暗いところは持ち上げず、明るい背景だけ白く。黒は少し締める
+      let t = (x - 0.35) / 0.45; t = t < 0 ? 0 : t > 1 ? 1 : t; t = t * t * (3 - 2 * t);
+      const y = Math.pow(x, 1 + (gamma - 1) * t);
+      lut[k] = Math.max(0, (y - 0.025) / 0.975);
+    } else {
+      lut[k] = Math.pow(x, gamma);
+    }
+  }
 
   // 4) ピンクベージュ（スライダー）：色のある部分（バッグ）だけ。白い背景はそのまま
-  const p = pinkV / 100;
+  const p = mode === 'pink' ? pinkV / 100 : 0;
   const tr = 1 + 0.07 * p, tg = 1 - 0.03 * p, tb = 1 + 0.04 * p;
 
   const curve = (v) => {
     v = v < 0 ? 0 : v > 1 ? 1 : v;
     v = lut[(v * LUT_N) | 0];
-    return v + 0.05 * (v - 0.5) * (1 - Math.abs(2 * v - 1));   // 軽いメリハリ
+    return v + (isBlack ? 0.08 : 0.05) * (v - 0.5) * (1 - Math.abs(2 * v - 1));   // 軽いメリハリ
   };
 
   for (let i = 0; i < d.length; i += 4) {
     let r = curve(d[i] * gr), g = curve(d[i + 1] * gg), b = curve(d[i + 2] * gb);
+    if (isBlack) {
+      // 暗い部分の色かぶりを少しだけ取って、黒を黒らしく
+      const m = (r + g + b) / 3;
+      if (m < 0.4) { const k = 0.35 * (1 - m / 0.4); r += (m - r) * k; g += (m - g) * k; b += (m - b) * k; }
+    }
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     let w = (mx - mn - 0.04) / 0.15;
     w = w < 0 ? 0 : w > 1 ? 1 : w;
-    if (w > 0) {
+    if (w > 0 && p > 0) {
       r += (Math.min(1, r * tr) - r) * w;
       g += (Math.min(1, g * tg) - g) * w;
       b += (Math.min(1, b * tb) - b) * w;
@@ -151,7 +169,7 @@ function toBlob(canvas) {
 
 async function processItem(item) {
   const { c, ctx } = drawSquare(item.bitmap, state.fit);
-  enhance(ctx, state.bright, state.pink);
+  enhance(ctx, state.bright, state.pink, state.mode);
   const blob = await toBlob(c);
   if (item.url) URL.revokeObjectURL(item.url);
   item.blob = blob;
@@ -278,6 +296,8 @@ function render() {
   els.pink.value = state.pink;
   els.brightVal.textContent = state.bright;
   els.pinkVal.textContent = state.pink;
+  els.pinkWrap.hidden = state.mode !== 'pink';
+  document.querySelectorAll('[name="mode"]').forEach((r) => { r.checked = r.value === state.mode; });
 }
 
 
@@ -294,7 +314,7 @@ function init() {
   Object.assign(els, {
     empty: $('#empty'), work: $('#work'), grid: $('#grid'), status: $('#status'),
     input: $('#file'), saveAll: $('#save-all'),
-    bright: $('#bright'), pink: $('#pink'), brightVal: $('#bright-val'), pinkVal: $('#pink-val'),
+    bright: $('#bright'), pink: $('#pink'), brightVal: $('#bright-val'), pinkVal: $('#pink-val'), pinkWrap: $('#pink-wrap'),
   });
 
   els.input.addEventListener('change', (e) => { loadFiles(e.target.files); e.target.value = ''; });
@@ -303,6 +323,8 @@ function init() {
 
   els.bright.addEventListener('input', (e) => { state.bright = +e.target.value; scheduleReprocess(); });
   els.pink.addEventListener('input', (e) => { state.pink = +e.target.value; scheduleReprocess(); });
+  document.querySelectorAll('[name="mode"]').forEach((r) =>
+    r.addEventListener('change', (e) => { state.mode = e.target.value; scheduleReprocess(); }));
 
 
   render();

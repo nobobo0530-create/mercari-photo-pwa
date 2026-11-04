@@ -15,7 +15,7 @@
 <body>
 <header class="top">
   <h1>メルカリ写真</h1>
-  <p class="sub">正方形・明るく・ピンクベージュ。汚れはそのまま。</p>
+  <p class="sub">正方形・明るく・背景は白く。汚れはそのまま。</p>
 </header>
 
 <main>
@@ -28,11 +28,16 @@
 
   <section id="work" hidden>
     <div class="controls">
+      <div class="modes" role="radiogroup" aria-label="商品の色">
+        <label><input type="radio" name="mode" id="mode-pink" value="pink" checked><span>ピンクベージュ</span></label>
+        <label><input type="radio" name="mode" id="mode-black" value="black"><span>黒い商品</span></label>
+        <label><input type="radio" name="mode" id="mode-natural" value="natural"><span>色そのまま</span></label>
+      </div>
       <label class="slider" for="bright">
         <span>明るさ <b id="bright-val">50</b></span>
         <input id="bright" type="range" min="0" max="100" step="5" value="50">
       </label>
-      <label class="slider" for="pink">
+      <label class="slider" for="pink" id="pink-wrap">
         <span>ピンク <b id="pink-val">50</b></span>
         <input id="pink" type="range" min="0" max="100" step="5" value="50">
       </label>
