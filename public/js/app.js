@@ -14,6 +14,7 @@ const state = {
   order: [],                  // 並び順（items の番号）
   outputs: [],                // { blob, url, name, count, key }
   selected: null,             // 並びの中で選んでいる位置
+  picked: new Set(),          // 保存用に選んだ仕上がり写真の番号
   singles: null,              // 1枚で見せる写真の数（null = おまかせ）
   bright: 50,
   pink: 50,                   // 色味の強さ 0-100
@@ -391,6 +392,7 @@ async function loadFiles(fileList) {
   state.items = [];
   state.order = [];
   state.selected = null;
+  state.picked.clear();
   state.singles = null;
   const picked = files.slice(0, MAX_PHOTOS);
   els.empty.hidden = true; els.work.hidden = false;
@@ -431,7 +433,7 @@ function clearOutputs() {
 // ---------- 保存 ----------
 
 async function saveAll() {
-  const ready = state.outputs.filter((o) => o.blob);
+  const ready = state.outputs.filter((o, i) => o.blob && (!state.picked.size || state.picked.has(i)));
   if (!ready.length) return;
   const files = ready.map((o) => new File([o.blob], o.name, { type: 'image/jpeg' }));
 
@@ -463,8 +465,12 @@ function setStatus(t) { if (els.status) els.status.textContent = t; }
 function renderGrid() {
   els.grid.innerHTML = '';
   state.outputs.forEach((o, i) => {
-    const b = document.createElement('div');
-    b.className = 'thumb';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'thumb' + (state.picked.has(i) ? ' picked' : '');
+    b.setAttribute('aria-pressed', state.picked.has(i) ? 'true' : 'false');
+    b.setAttribute('aria-label', `${i + 1}枚目を選ぶ`);
+    b.addEventListener('click', () => togglePick(i));
     if (o.url) {
       const img = document.createElement('img');
       img.src = o.url; img.alt = `${i + 1}枚目`;
@@ -474,10 +480,19 @@ function renderGrid() {
     }
     const n = document.createElement('span');
     n.className = 'num';
-    n.textContent = o.count > 1 ? `${i + 1}（${o.count}枚まとめ）` : `${i + 1}`;
+    n.textContent = o.count > 1 ? `${i + 1}・${o.count}枚まとめ` : `${i + 1}`;
     b.appendChild(n);
+    const ck = document.createElement('span');
+    ck.className = 'check'; ck.textContent = '✓';
+    b.appendChild(ck);
     els.grid.appendChild(b);
   });
+}
+
+function togglePick(i) {
+  if (state.picked.has(i)) state.picked.delete(i); else state.picked.add(i);
+  renderGrid();
+  render();
 }
 
 function render() {
@@ -487,7 +502,10 @@ function render() {
   els.work.hidden = !has;
   const outN = state.outputs.length;
   els.saveAll.disabled = state.busy || !outN;
-  els.saveAll.textContent = outN ? `${outN}枚まとめて保存` : 'まとめて保存';
+  for (const i of [...state.picked]) if (i >= outN) state.picked.delete(i);
+  const pickN = state.picked.size;
+  els.saveAll.textContent = !outN ? 'まとめて保存' : pickN ? `選んだ${pickN}枚を保存` : `${outN}枚まとめて保存`;
+  els.clearPick.hidden = !pickN;
   els.bright.value = state.bright;
   els.pink.value = state.pink;
   els.brightVal.textContent = state.bright;
@@ -733,7 +751,7 @@ function init() {
     input: $('#file'), saveAll: $('#save-all'),
     bright: $('#bright'), pink: $('#pink'), brightVal: $('#bright-val'), pinkVal: $('#pink-val'), pinkWrap: $('#pink-wrap'), sat: $('#sat'), satVal: $('#sat-val'), tints: $('#tints'),
     singlesWrap: $('#singles-wrap'), singlesVal: $('#singles-val'), singlesMinus: $('#singles-minus'), singlesPlus: $('#singles-plus'),
-    summary: $('#summary'), arrange: $('#arrange'), actions: $('#actions'),
+    summary: $('#summary'), clearPick: $('#clear-pick'), arrange: $('#arrange'), actions: $('#actions'),
     editor: $('#editor'), frame: $('#frame'), editImg: $('#edit-img'), zoom: $('#zoom'), zoomVal: $('#zoom-val'),
   });
   initEditor();
@@ -743,6 +761,7 @@ function init() {
   els.input.addEventListener('change', (e) => { loadFiles(e.target.files); e.target.value = ''; });
   document.querySelectorAll('.pick').forEach((b) => b.addEventListener('click', () => els.input.click()));
   els.saveAll.addEventListener('click', saveAll);
+  els.clearPick.addEventListener('click', () => { state.picked.clear(); renderGrid(); render(); });
 
   els.bright.addEventListener('input', (e) => { state.bright = +e.target.value; scheduleReprocess(); });
   els.pink.addEventListener('input', (e) => { state.pink = +e.target.value; scheduleReprocess(); });
