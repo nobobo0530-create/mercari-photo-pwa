@@ -46,6 +46,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .controls { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: grid; gap: 12px; margin-top: 8px; }
 .slider { display: grid; gap: 4px; }
 .modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.modes.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .modes label { position: relative; }
 .modes input { position: absolute; opacity: 0; inset: 0; margin: 0; }
 .modes span { display: block; text-align: center; padding: 9px 4px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
@@ -81,5 +82,42 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border-top: 1px solid var(--line);
 }
-.bar button { width: 100%; max-width: 720px; display: block; margin: 0 auto; font-size: 17px; padding: 15px; }
+.bar > button { width: 100%; max-width: 720px; display: block; margin: 0 auto; font-size: 17px; padding: 15px; }
 
+
+.h2 { font-size: 16px; margin: 28px 0 2px; }
+.hint2 { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.arrange { display: grid; gap: 10px; }
+.agroup { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; min-width: 0; }
+.agroup.multi { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.ahead { font-size: 12px; font-weight: 700; margin: 0 0 6px 2px; }
+.arow { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.src { position: relative; padding: 0; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--line); border: 2px solid transparent; }
+.src img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.src.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.zbadge { position: absolute; right: 2px; bottom: 2px; font-size: 10px; background: var(--accent); color: var(--accent-fg); border-radius: 5px; padding: 0 4px; }
+.actions { display: flex; align-items: center; gap: 8px; max-width: 720px; margin: 0 auto 10px; font-size: 13px; }
+.actions span { flex: 1; font-weight: 700; color: var(--accent); }
+.actions button { padding: 8px 12px; font-size: 13px; }
+.editor { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-left, 0px)); }
+.etitle { margin: 0; font-size: 14px; font-weight: 700; }
+.frame { position: relative; overflow: hidden; border-radius: 12px; background: #fff; touch-action: none; max-width: 100%; box-shadow: 0 0 0 1px var(--line); }
+.frame img { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; user-select: none; -webkit-user-select: none; pointer-events: none; }
+.ezoom { width: min(420px, 100%); }
+.erow { display: flex; gap: 8px; width: min(420px, 100%); }
+.erow button { flex: 1; }
+
+.clabel { margin: 0 0 6px; font-size: 14px; }
+.tints { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.tint { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px; font-size: 11px; text-align: center; }
+.tint > input[type=radio] { position: absolute; opacity: 0; inset: 0; margin: 0; }
+.tint:has(input[type=radio]:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); font-weight: 700; }
+.tint:has(input[type=radio]:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dot { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.dot.none { background: linear-gradient(135deg, transparent 46%, var(--muted) 46%, var(--muted) 54%, transparent 54%), var(--card); }
+.tname { line-height: 1.2; }
+.picker { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+body.has-actions { padding-bottom: calc(150px + var(--safe-b)); }
+.snum { position: absolute; left: 2px; top: 2px; font-size: 10px; background: rgba(0,0,0,.45); color: #fff; border-radius: 5px; padding: 0 4px; font-variant-numeric: tabular-nums; }
+.actions span { min-width: 0; }
