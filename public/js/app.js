@@ -16,6 +16,7 @@ const state = {
   selected: null,             // 並びの中で選んでいる位置
   picked: new Set(),          // 保存用に選んだ仕上がり写真の番号
   singles: null,              // 1枚で見せる写真の数（null = おまかせ）
+  sizes: null,                // 自分で決めた分割数の並び（null = おまかせ）
   bright: 50,
   pink: 50,                   // 色味の強さ 0-100
   sat: null,                  // 鮮やかさ 0-100（50 = そのまま、null = おまかせ：黒い商品は控えめ）
@@ -322,27 +323,58 @@ async function composeGroup(group) {
 const nextFrame = () => new Promise((r) => setTimeout(r, 0));
 
 function currentSingles() {
-  const n = state.items.length;
+  const n = state.order.length;
   const rg = singlesRange(n);
   if (state.singles == null) return rg.auto;
   return Math.min(rg.max, Math.max(rg.min, state.singles));
 }
 
+function autoSizes() {
+  return makeGroups(state.order.length, currentSingles()).map((g) => g.length);
+}
+
+// 1枚ごとに何枚の写真を入れるか（1 = 1枚の写真、2〜9 = まとめ写真）
+function currentSizes() {
+  const n = state.order.length;
+  if (state.sizes && state.sizes.reduce((a, b) => a + b, 0) === n) return state.sizes;
+  state.sizes = null;
+  return autoSizes();
+}
+
 function currentGroups() {
-  return makeGroups(state.items.length, currentSingles());
+  let p = 0;
+  return currentSizes().map((s) => Array.from({ length: s }, () => p++));
+}
+
+// まとめ写真の分割数を変える（前後の写真の並びはそのまま、区切りだけ動かす）
+function changeSize(gi, delta) {
+  const s = [...currentSizes()];
+  if (delta > 0) {
+    if (s[gi] >= 9) return;
+    if (gi + 1 >= s.length) { setStatus('うしろに写真がないので増やせません。「写真を追加」で足せます'); return; }
+    s[gi]++; s[gi + 1]--;
+    if (s[gi + 1] === 0) s.splice(gi + 1, 1);
+  } else {
+    if (s[gi] <= 1) return;
+    s[gi]--;
+    s.splice(gi + 1, 0, 1);              // はみ出た写真は、すぐうしろの1枚の写真になる
+  }
+  state.sizes = s;
+  state.selected = null;
+  scheduleReprocess();
 }
 
 function groupKey(g) {
   const look = `${state.mode}|${state.bright}|${state.pink}|${currentSat()}|${currentDelta().join(',')}`;
   return look + '|' + g.map((pos) => {
     const id = state.order[pos], c = state.items[id].crop;
-    return `${id}:${c.cx.toFixed(3)},${c.cy.toFixed(3)},${c.z.toFixed(2)}`;
+    return `${id}r${state.items[id].rot || 0}:${c.cx.toFixed(3)},${c.cy.toFixed(3)},${c.z.toFixed(2)}`;
   }).join(';');
 }
 
 async function processAll() {
-  const n = state.items.length;
-  if (!n) return;
+  const n = state.order.length;
+  if (!n) { state.busy = false; clearOutputs(); render(); renderGrid(); renderArrange(); return; }
   const run = ++state.runId;
   state.busy = true;
   const groups = currentGroups();
@@ -383,8 +415,54 @@ async function processAll() {
 
 // ---------- 読み込み ----------
 
+function imageFiles(fileList) {
+  return Array.from(fileList).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png)$/i.test(f.name));
+}
+
+// 写真1枚を読み込んで、縮小した元写真・サムネイル・明るさの基準を作る
+async function readPhoto(f) {
+  const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(f));
+  const s = Math.min(1, SRC_LONG / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  try { bmp.close(); } catch (_) {}
+  const params = analyze(ctx.getImageData(0, 0, c.width, c.height).data);
+  const { src, thumb } = await encodePhoto(c);
+  return { name: f.name, src, thumb, w: c.width, h: c.height, params, rot: 0, crop: { cx: 0.5, cy: 0.5, z: 1 } };
+}
+
+async function encodePhoto(c) {
+  const src = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.95));
+  const t = document.createElement('canvas');
+  const ts = 240 / Math.min(c.width, c.height);
+  t.width = Math.round(c.width * ts); t.height = Math.round(c.height * ts);
+  t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+  const thumb = URL.createObjectURL(await new Promise((res) => t.toBlob(res, 'image/jpeg', 0.8)));
+  return { src, thumb };
+}
+
+async function readInto(files) {
+  let added = 0;
+  for (const [idx, f] of files.entries()) {
+    setStatus(`読み込み中… ${idx + 1} / ${files.length}`);
+    await nextFrame();
+    try {
+      const it = await readPhoto(f);
+      state.order.push(state.items.length);
+      state.items.push(it);
+      added++;
+    } catch (e) {
+      console.error('読み込めない画像', f.name, e);
+    }
+  }
+  return added;
+}
+
 async function loadFiles(fileList) {
-  const files = Array.from(fileList).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png)$/i.test(f.name));
+  const files = imageFiles(fileList);
   if (!files.length) return;
   state.runId++;
   clearOutputs();
@@ -394,35 +472,71 @@ async function loadFiles(fileList) {
   state.selected = null;
   state.picked.clear();
   state.singles = null;
-  const picked = files.slice(0, MAX_PHOTOS);
+  state.sizes = null;
   els.empty.hidden = true; els.work.hidden = false;
-  for (const [idx, f] of picked.entries()) {
-    setStatus(`読み込み中… ${idx + 1} / ${picked.length}`);
-    await nextFrame();
-    try {
-      const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(f));
-      const s = Math.min(1, SRC_LONG / Math.max(bmp.width, bmp.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
-      const ctx = c.getContext('2d', { willReadFrequently: true });
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(bmp, 0, 0, c.width, c.height);
-      try { bmp.close(); } catch (_) {}
-      const params = analyze(ctx.getImageData(0, 0, c.width, c.height).data);
-      const src = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.95));
-      const t = document.createElement('canvas');
-      const ts = 240 / Math.min(c.width, c.height);
-      t.width = Math.round(c.width * ts); t.height = Math.round(c.height * ts);
-      t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
-      const thumb = URL.createObjectURL(await new Promise((res) => t.toBlob(res, 'image/jpeg', 0.8)));
-      state.order.push(state.items.length);
-      state.items.push({ name: f.name, src, thumb, w: c.width, h: c.height, params, crop: { cx: 0.5, cy: 0.5, z: 1 } });
-    } catch (e) {
-      console.error('読み込めない画像', f.name, e);
-    }
-  }
+  await readInto(files.slice(0, MAX_PHOTOS));
   await processAll();
   if (files.length > MAX_PHOTOS) setStatus(`多すぎるので、最初の${MAX_PHOTOS}枚だけ使いました`);
+}
+
+// 今の写真のうしろに追加する
+async function addFiles(fileList) {
+  const room = MAX_PHOTOS - state.order.length;
+  const files = imageFiles(fileList).slice(0, Math.max(0, room));
+  if (!files.length) { if (room <= 0) setStatus(`写真は${MAX_PHOTOS}枚までです`); return; }
+  state.runId++;
+  const manual = state.sizes ? [...currentSizes()] : null;
+  const added = await readInto(files);
+  if (manual) {
+    // 自分で分け方を決めていたら、それは残して、追加分だけうしろに4枚ずつのまとめ写真で足す
+    let left = added;
+    while (left > 0) { const s = left === 5 ? 3 : Math.min(4, left); manual.push(s); left -= s; }
+    state.sizes = manual;
+  }
+  setStatus(`${added}枚追加しました`);
+  await processAll();
+}
+
+// アプリの一覧から外す（写真アプリの写真は消えない）
+function removePos(pos) {
+  if (state.sizes) {
+    const s = [...currentSizes()];
+    let p = 0;
+    for (let gi = 0; gi < s.length; gi++) {
+      if (pos < p + s[gi]) { s[gi]--; if (!s[gi]) s.splice(gi, 1); break; }
+      p += s[gi];
+    }
+    state.order.splice(pos, 1);
+    state.sizes = s;
+  } else {
+    state.order.splice(pos, 1);
+  }
+  state.selected = null;
+  setStatus('1枚外しました（写真アプリの写真は消えません）');
+  if (!state.order.length) {
+    state.items = [];
+    state.picked.clear();
+  }
+  scheduleReprocess();
+}
+
+// 右に90度まわす
+async function rotatePos(pos) {
+  const id = state.order[pos];
+  const it = state.items[id];
+  const bmp = await createImageBitmap(it.src);
+  const c = document.createElement('canvas');
+  c.width = bmp.height; c.height = bmp.width;
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(bmp, 0, 0);
+  try { bmp.close(); } catch (_) {}
+  const { src, thumb } = await encodePhoto(c);
+  URL.revokeObjectURL(it.thumb);
+  Object.assign(it, { src, thumb, w: c.width, h: c.height, rot: ((it.rot || 0) + 1) % 4, crop: { cx: 0.5, cy: 0.5, z: 1 } });
+  setStatus('右に回しました');
+  scheduleReprocess();
 }
 
 function clearOutputs() {
@@ -496,7 +610,7 @@ function togglePick(i) {
 }
 
 function render() {
-  const n = state.items.length;
+  const n = state.order.length;
   const has = n > 0;
   els.empty.hidden = has;
   els.work.hidden = !has;
@@ -521,12 +635,19 @@ function render() {
   const rg = singlesRange(n);
   const s = currentSingles();
   els.singlesWrap.hidden = n <= OUT_COUNT;
-  els.singlesVal.textContent = s;
-  els.singlesMinus.disabled = s <= rg.min;
-  els.singlesPlus.disabled = s >= rg.max;
-  els.summary.textContent = n > OUT_COUNT
-    ? `写真${n}枚 → 1枚ずつ${s}枚 ＋ まとめ写真${OUT_COUNT - s}枚`
-    : `写真${n}枚`;
+  els.singlesVal.textContent = state.sizes ? '自分で' : s;
+  els.singlesMinus.disabled = !state.sizes && s <= rg.min;
+  els.singlesPlus.disabled = !state.sizes && s >= rg.max;
+  if (n) {
+    const sizes = currentSizes();
+    const ones = sizes.filter((x) => x === 1).length;
+    const total = sizes.length;
+    els.summary.textContent = `写真${n}枚 → 1枚ずつ${ones}枚 ＋ まとめ写真${total - ones}枚（全部で${total}枚）`
+      + (total > OUT_COUNT ? ` ※${OUT_COUNT}枚を超えています` : '');
+    els.summary.classList.toggle('over', total > OUT_COUNT);
+  } else {
+    els.summary.textContent = '';
+  }
 }
 
 // ---------- 色味の選択 ----------
@@ -567,7 +688,7 @@ function buildTints() {
 function renderArrange() {
   const box = els.arrange;
   box.innerHTML = '';
-  if (!state.items.length) return;
+  if (!state.order.length) { els.actions.hidden = true; document.body.classList.remove('has-actions'); return; }
   const groups = currentGroups();
   const srcButton = (pos, label, num) => {
     const it = state.items[state.order[pos]];
@@ -591,11 +712,32 @@ function renderArrange() {
     b.addEventListener('click', () => onSourceTap(pos));
     return b;
   };
-  const section = (title, multi) => {
+  const section = (title, multi, gi) => {
     const sec = document.createElement('div');
     sec.className = 'agroup' + (multi ? ' multi' : '');
     const h = document.createElement('div');
-    h.className = 'ahead'; h.textContent = title;
+    h.className = 'ahead';
+    const t = document.createElement('span');
+    t.textContent = title;
+    h.appendChild(t);
+    if (multi) {
+      // 分割数を − ＋ で変える
+      const ctl = document.createElement('span');
+      ctl.className = 'split';
+      const minus = document.createElement('button');
+      minus.type = 'button'; minus.className = 'ghost'; minus.textContent = '−';
+      minus.setAttribute('aria-label', `${gi + 1}枚目の分割を減らす`);
+      minus.addEventListener('click', () => changeSize(gi, -1));
+      const val = document.createElement('b');
+      val.textContent = `${groups[gi].length}分割`;
+      const plus = document.createElement('button');
+      plus.type = 'button'; plus.className = 'ghost'; plus.textContent = '＋';
+      plus.setAttribute('aria-label', `${gi + 1}枚目の分割を増やす`);
+      plus.disabled = groups[gi].length >= 9 || gi === groups.length - 1;
+      plus.addEventListener('click', () => changeSize(gi, 1));
+      ctl.append(minus, val, plus);
+      h.appendChild(ctl);
+    }
     const row = document.createElement('div');
     row.className = 'arow';
     sec.append(h, row);
@@ -605,12 +747,12 @@ function renderArrange() {
   // 1枚ずつの写真はひとまとめに表示して、一覧を短くする
   const singles = groups.filter((g) => g.length === 1);
   if (singles.length) {
-    const row = section(`1枚ずつ見せる写真（1〜${singles.length}枚目）`, false);
+    const row = section(`1枚ずつ見せる写真（${singles.length}枚）`, false);
     groups.forEach((g, gi) => { if (g.length === 1) row.appendChild(srcButton(g[0], `${gi + 1}枚目の写真`, gi + 1)); });
   }
   groups.forEach((g, gi) => {
     if (g.length === 1) return;
-    const row = section(`${gi + 1}枚目（${g.length}枚まとめ）`, true);
+    const row = section(`${gi + 1}枚目`, true, gi);
     g.forEach((pos) => row.appendChild(srcButton(pos, `${gi + 1}枚目のまとめ写真に入る写真`)));
   });
   els.actions.hidden = state.selected == null;
@@ -756,6 +898,10 @@ function init() {
   });
   initEditor();
   $('#act-zoom').addEventListener('click', openEditor);
+  $('#act-rotate').addEventListener('click', () => { if (state.selected != null) rotatePos(state.selected); });
+  $('#act-remove').addEventListener('click', () => { if (state.selected != null) removePos(state.selected); });
+  $('#add-file').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+  $('#add-photos').addEventListener('click', () => $('#add-file').click());
   $('#act-cancel').addEventListener('click', () => { state.selected = null; renderArrange(); });
 
   els.input.addEventListener('change', (e) => { loadFiles(e.target.files); e.target.value = ''; });
@@ -769,8 +915,13 @@ function init() {
   document.querySelectorAll('[name="mode"]').forEach((r) =>
     r.addEventListener('change', (e) => { state.mode = e.target.value; state.sat = null; scheduleReprocess(); }));
   buildTints();
-  els.singlesMinus.addEventListener('click', () => { state.singles = currentSingles() - 1; state.selected = null; scheduleReprocess(); });
-  els.singlesPlus.addEventListener('click', () => { state.singles = currentSingles() + 1; state.selected = null; scheduleReprocess(); });
+  const stepSingles = (d) => {
+    state.singles = state.sizes ? currentSizes().filter((x) => x === 1).length : currentSingles() + d;
+    state.sizes = null; state.selected = null;
+    scheduleReprocess();
+  };
+  els.singlesMinus.addEventListener('click', () => stepSingles(-1));
+  els.singlesPlus.addEventListener('click', () => stepSingles(1));
 
   render();
 }

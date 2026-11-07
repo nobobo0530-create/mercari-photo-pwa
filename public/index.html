@@ -56,8 +56,9 @@
           <button type="button" id="singles-plus" class="ghost" aria-label="増やす">＋</button>
         </div>
       </div>
-      <p class="hint">選んだ順に、最初の写真から1枚ずつ使います。残りはまとめ写真になります。下の「並べ替え・アップ」で直せます。</p>
+      <p class="hint">選んだ順に、最初の写真から1枚ずつ使います。残りはまとめ写真になります。下の「並べ替え・編集」で直せます。</p>
       <div class="row">
+        <button type="button" id="add-photos" class="ghost">写真を追加</button>
         <button type="button" class="pick ghost">写真を選び直す</button>
       </div>
     </div>
@@ -70,8 +71,8 @@
     </div>
     <div id="grid" class="grid"></div>
 
-    <h2 class="h2">並べ替え・アップ</h2>
-    <p class="hint2">写真をタップして選び、別の写真をタップすると入れ替わります。選んだ写真は「アップにする」で拡大できます。</p>
+    <h2 class="h2">並べ替え・編集</h2>
+    <p class="hint2">写真をタップして選び、別の写真をタップすると入れ替わります。選んだ写真は「アップ」「回転」「外す」ができます。まとめ写真は − ＋ で分割数を変えられます。</p>
     <div id="arrange" class="arrange"></div>
   </section>
 </main>
@@ -79,13 +80,18 @@
 <footer class="bar">
   <div id="actions" class="actions" hidden>
     <span>入れ替える写真をタップ</span>
-    <button type="button" id="act-zoom" class="ghost">アップにする</button>
-    <button type="button" id="act-cancel" class="ghost">やめる</button>
+    <div class="abtns">
+      <button type="button" id="act-zoom" class="ghost">アップ</button>
+      <button type="button" id="act-rotate" class="ghost">回転</button>
+      <button type="button" id="act-remove" class="ghost">外す</button>
+      <button type="button" id="act-cancel" class="ghost">やめる</button>
+    </div>
   </div>
   <button type="button" id="save-all" class="primary" disabled>まとめて保存</button>
 </footer>
 
 <input id="file" type="file" accept="image/*" multiple hidden>
+<input id="add-file" type="file" accept="image/*" multiple hidden>
 
 <div id="editor" class="editor" hidden>
   <p class="etitle">指で動かして、見せたいところに合わせる</p>

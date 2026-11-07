@@ -131,3 +131,15 @@ button.thumb { border: 0; cursor: pointer; }
 .thumb.picked { box-shadow: 0 0 0 3px var(--accent); }
 .thumb.picked .check { background: var(--accent); color: var(--accent-fg); box-shadow: none; }
 .thumb:not(.picked) img { -webkit-touch-callout: default; }
+
+.actions { flex-wrap: wrap; }
+.actions span { flex-basis: 100%; }
+.abtns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%; }
+.abtns button { padding: 9px 4px; }
+.ahead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.split { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+.split button { width: 32px; height: 28px; padding: 0; font-size: 16px; border-radius: 8px; }
+.split button:disabled { opacity: .35; }
+.split b { min-width: 3.5em; text-align: center; color: var(--accent); font-variant-numeric: tabular-nums; }
+.summary.over { color: #c2410c; }
+body.has-actions { padding-bottom: calc(190px + var(--safe-b)); }
