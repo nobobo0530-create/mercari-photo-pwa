@@ -143,3 +143,4 @@ button.thumb { border: 0; cursor: pointer; }
 .split b { min-width: 3.5em; text-align: center; color: var(--accent); font-variant-numeric: tabular-nums; }
 .summary.over { color: #c2410c; }
 body.has-actions { padding-bottom: calc(190px + var(--safe-b)); }
+.tname { white-space: nowrap; font-size: 10.5px; letter-spacing: -0.02em; }

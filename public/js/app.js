@@ -22,7 +22,7 @@ const state = {
   sat: null,                  // 鮮やかさ 0-100（50 = そのまま、null = おまかせ：黒い商品は控えめ）
   tint: 'pinkbeige',          // 色味（下の TINTS の id か 'custom'）
   custom: '#e8b4c8',          // 自分で選んだ色
-  mode: 'normal',             // 'normal' = ふつうの商品 / 'black' = 黒い商品
+  mode: 'normal',             // 'normal' = ふつう / 'black' = 黒い商品（色味で「ブラック」を選んだとき）
   busy: false,
   runId: 0,
 };
@@ -35,6 +35,7 @@ const TINTS = [
   { id: 'brown', name: 'ブラウン', swatch: '#c49a74', d: [0.06, -0.01, -0.09] },
   { id: 'green', name: 'グリーン', swatch: '#a9c9a4', d: [-0.04, 0.05, -0.02] },
   { id: 'blue', name: 'ブルー', swatch: '#a8bfe0', d: [-0.05, -0.01, 0.07] },
+  { id: 'black', name: 'ブラック', swatch: '#2b2b2b', d: [0, 0, 0] },   // 黒い商品用（暗部を持ち上げず、赤っぽさを抑える）
 ];
 
 function hexToDelta(hex) {
@@ -58,9 +59,11 @@ function loadSettings() {
     if (typeof s.bright === 'number') state.bright = s.bright;
     if (typeof s.pink === 'number') state.pink = s.pink;
     if (typeof s.sat === 'number') state.sat = s.sat;
-    if (s.mode === 'black') state.mode = 'black';
+
     if (s.tint && (s.tint === 'custom' || TINTS.some((t) => t.id === s.tint))) state.tint = s.tint;
     if (/^#[0-9a-f]{6}$/i.test(s.custom || '')) state.custom = s.custom;
+    if (s.mode === 'black' && s.tint !== 'custom') state.tint = 'black';   // 前の「黒い商品」設定を引き継ぐ
+    state.mode = state.tint === 'black' ? 'black' : 'normal';
   } catch (_) {}
 }
 function saveSettings() {
@@ -626,8 +629,7 @@ function render() {
   els.pinkVal.textContent = state.pink;
   els.sat.value = currentSat();
   els.satVal.textContent = currentSat();
-  els.pinkWrap.hidden = state.tint === 'none';
-  document.querySelectorAll('[name="mode"]').forEach((r) => { r.checked = r.value === state.mode; });
+  els.pinkWrap.hidden = state.tint === 'none' || state.tint === 'black';
   document.querySelectorAll('[name="tint"]').forEach((r) => { r.checked = r.value === state.tint; });
   if (els.customColor) els.customColor.value = state.custom;
   if (els.customDot) els.customDot.style.background = state.custom;
@@ -652,6 +654,15 @@ function render() {
 
 // ---------- 色味の選択 ----------
 
+// 色味を選ぶ。ブラックを選んだときだけ黒い商品向けの仕上げにする
+function setTint(id) {
+  const mode = id === 'black' ? 'black' : 'normal';
+  if (mode !== state.mode) state.sat = null;   // 鮮やかさはその種類のおすすめ値に戻す
+  state.mode = mode;
+  state.tint = id;
+  scheduleReprocess();
+}
+
 function buildTints() {
   const box = els.tints;
   box.innerHTML = '';
@@ -660,7 +671,7 @@ function buildTints() {
     l.className = 'tint';
     const i = document.createElement('input');
     i.type = 'radio'; i.name = 'tint'; i.value = id; i.id = 'tint-' + id;
-    i.addEventListener('change', () => { state.tint = id; scheduleReprocess(); });
+    i.addEventListener('change', () => setTint(id));
     const dot = document.createElement('span');
     dot.className = 'dot' + (color ? '' : ' none');
     if (color) dot.style.background = color;
@@ -677,8 +688,8 @@ function buildTints() {
   picker.type = 'color'; picker.id = 'custom-color'; picker.value = state.custom;
   picker.className = 'picker';
   picker.setAttribute('aria-label', '色を選ぶ');
-  picker.addEventListener('click', () => { if (state.tint !== 'custom') { state.tint = 'custom'; scheduleReprocess(); } });
-  picker.addEventListener('input', (e) => { state.custom = e.target.value; state.tint = 'custom'; scheduleReprocess(); });
+  picker.addEventListener('click', () => { if (state.tint !== 'custom') setTint('custom'); });
+  picker.addEventListener('input', (e) => { state.custom = e.target.value; setTint('custom'); });
   c.i.closest('label').appendChild(picker);
   els.customColor = picker;
 }
@@ -912,8 +923,6 @@ function init() {
   els.bright.addEventListener('input', (e) => { state.bright = +e.target.value; scheduleReprocess(); });
   els.pink.addEventListener('input', (e) => { state.pink = +e.target.value; scheduleReprocess(); });
   els.sat.addEventListener('input', (e) => { state.sat = +e.target.value; scheduleReprocess(); });
-  document.querySelectorAll('[name="mode"]').forEach((r) =>
-    r.addEventListener('change', (e) => { state.mode = e.target.value; state.sat = null; scheduleReprocess(); }));
   buildTints();
   const stepSingles = (d) => {
     state.singles = state.sizes ? currentSizes().filter((x) => x === 1).length : currentSingles() + d;

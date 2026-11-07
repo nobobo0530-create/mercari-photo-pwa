@@ -1,5 +1,5 @@
 // ネット優先・オフライン時はキャッシュ
-const CACHE = 'mercari-photo-v3';
+const CACHE = 'mercari-photo-v4';
 const ASSETS = ['./', './index.html', './css/style.css', './js/app.js', './manifest.json'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS).catch(() => {}))); });
 self.addEventListener('activate', e => {
